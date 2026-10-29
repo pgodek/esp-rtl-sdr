@@ -7,7 +7,9 @@
 - **`esp_rtl_sdr_uninstall()` aborted with a dongle attached** (`hub_uninstall` -> `hcd_port_deinit` returned `ESP_ERR_INVALID_STATE`, ESP-IDF 5.5.6,
   Waveshare ESP32-P4-Module-DEV-KIT, Blog V4; `p4_serial_smoke` crashed after `SMOKE stop PASS`). `session_release()` stopped the host library task and
   called `usb_host_uninstall()` without releasing the attached device first, which ESP-IDF requires. It now calls `usb_host_device_free_all()` after the
-  last client is deregistered and waits (up to 1 s) for `USB_HOST_LIB_EVENT_FLAGS_ALL_FREE` before uninstalling. Not yet confirmed on hardware.
+  last client is deregistered and waits (up to 1 s) for `USB_HOST_LIB_EVENT_FLAGS_ALL_FREE` before uninstalling. Hardware (Waveshare
+  ESP32-P4-Module-DEV-KIT, chip rev v3.2, ESP-IDF 5.5.6, Blog V4): `p4_serial_smoke` now ends `SMOKE uninstall PASS` and returns from `app_main`
+  (one run). A run where the dongle failed to enumerate (`candidates=0`) still aborted in `hub_uninstall`; that case is not fixed.
 
 ## 0.9.3 (2026-10-02) — RF band select, unplug recovery, V4/V4L band select
 
