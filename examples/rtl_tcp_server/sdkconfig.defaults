@@ -18,8 +18,7 @@ CONFIG_SPIRAM=y
 # and the clock (50 MHz external input on GPIO 50) come from
 # ETH_ESP32_EMAC_DEFAULT_CONFIG(); MDC/MDIO/PHY reset/address are set in
 # menuconfig (rtl_tcp_server -> Ethernet). The defaults match ESP-IDF's
-# ESP32-P4 Function-EV-Board and have NOT been checked against the Waveshare
-# Module-DEV-KIT schematic - see README.
+# ESP32-P4 Function-EV-Board and were tested on the Waveshare Module-DEV-KIT.
 CONFIG_ETH_ENABLED=y
 CONFIG_ETH_USE_ESP32_EMAC=y
 
