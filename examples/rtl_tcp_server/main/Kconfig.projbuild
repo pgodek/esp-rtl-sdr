@@ -1,0 +1,43 @@
+menu "rtl_tcp_server"
+
+    config RTLTCP_PORT
+        int "TCP listen port"
+        default 1234
+
+    config RTLTCP_DEFAULT_FREQ_HZ
+        int "Default centre frequency (Hz)"
+        default 100000000
+
+    config RTLTCP_DEFAULT_RATE_SPS
+        int "Default sample rate (samples/s)"
+        default 2048000
+
+    config RTLTCP_SEND_CHUNK
+        int "Bytes read from the driver and sent per iteration"
+        default 16384
+        range 512 65536
+
+    config RTLTCP_PULL_RING_BYTES
+        int "Driver pull-ring size in bytes (0 = driver auto)"
+        default 262144
+        help
+            Absorbs network jitter between the USB completion path and the
+            TCP sender. When it overruns the driver drops the oldest data and
+            counts it (ring_overrun_* in the 5 s status line).
+
+    menu "Ethernet (RMII + IP101)"
+        config RTLTCP_ETH_MDC_GPIO
+            int "MDC GPIO"
+            default 31
+        config RTLTCP_ETH_MDIO_GPIO
+            int "MDIO GPIO"
+            default 52
+        config RTLTCP_ETH_PHY_RST_GPIO
+            int "PHY reset GPIO (-1 = none)"
+            default 51
+        config RTLTCP_ETH_PHY_ADDR
+            int "PHY address"
+            default 1
+    endmenu
+
+endmenu

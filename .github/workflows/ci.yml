@@ -82,6 +82,14 @@ jobs:
           path: examples/p4_serial_smoke
           command: idf.py build
 
+      - name: Build rtl_tcp_server for esp32p4
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: ${{ matrix.idf_ver }}
+          target: esp32p4
+          path: examples/rtl_tcp_server
+          command: idf.py build
+
       - name: Show binary size (if present)
         if: success()
         working-directory: examples/p4_serial_smoke

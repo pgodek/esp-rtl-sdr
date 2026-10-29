@@ -1,0 +1,32 @@
+# rtl_tcp_server defaults for the Waveshare ESP32-P4-Module-DEV-KIT.
+# USB: HOST jumper -> Type-A port 1 (direct); the hub driver also lets the
+# DEVICE jumper (ports 2-4 behind the CH334) work with a single dongle.
+CONFIG_IDF_TARGET="esp32p4"
+
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
+CONFIG_FREERTOS_HZ=1000
+CONFIG_ESP_CONSOLE_UART_DEFAULT=y
+CONFIG_USB_HOST_CONTROL_TRANSFER_MAX_SIZE=1024
+CONFIG_USB_HOST_HUBS_SUPPORTED=y
+
+# PSRAM (32 MB on the Module-DEV-KIT): without it the driver's pull ring,
+# IQ slots and URB buffers exhaust the ~540 KiB of internal RAM and start()
+# fails with ESP_ERR_NO_MEM (seen on p4_serial_smoke).
+CONFIG_SPIRAM=y
+
+# Ethernet: internal EMAC + IP101 over RMII. On ESP32-P4 the RMII data pins
+# and the clock (50 MHz external input on GPIO 50) come from
+# ETH_ESP32_EMAC_DEFAULT_CONFIG(); MDC/MDIO/PHY reset/address are set in
+# menuconfig (rtl_tcp_server -> Ethernet). The defaults match ESP-IDF's
+# ESP32-P4 Function-EV-Board and have NOT been checked against the Waveshare
+# Module-DEV-KIT schematic - see README.
+CONFIG_ETH_ENABLED=y
+CONFIG_ETH_USE_ESP32_EMAC=y
+
+# lwIP: ~4 MB/s of TCP payload at 2.048 MS/s
+CONFIG_LWIP_TCP_SND_BUF_DEFAULT=32768
+CONFIG_LWIP_TCP_WND_DEFAULT=16384
+CONFIG_LWIP_TCP_SACK_OUT=y
+CONFIG_LWIP_IRAM_OPTIMIZATION=y
+CONFIG_ETH_DMA_RX_BUFFER_NUM=20
+CONFIG_ETH_DMA_TX_BUFFER_NUM=20
