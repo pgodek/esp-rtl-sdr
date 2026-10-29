@@ -74,10 +74,10 @@ enum : uint32_t {
 struct Session {
     esp_rtl_sdr_handle_t sdr;
     int sock;
-    SemaphoreHandle_t mtx;    /* serialises read() against stop/start */
     EventGroupHandle_t ev;
     volatile bool stop;
     volatile bool streaming;  /* read by the sender task */
+    volatile bool in_read;    /* sender is inside esp_rtl_sdr_read() */
     bool started;             /* command-loop view: stream has been started */
     uint32_t dirty;           /* settings changed but not yet sent to the driver */
     TickType_t last_cmd;
@@ -133,16 +133,22 @@ static esp_err_t start_stream(Session *s)
     return ESP_OK;
 }
 
-/* Rate changes need stop/start; the sender is parked on the mutex meanwhile. */
+/* Rate changes need stop/start. The sender must be out of read() first. This is a flag
+ * handshake, not a mutex: a mutex taken in a tight loop by the higher-priority sender is
+ * handed back to it before this task ever runs, which delayed the restart by up to 10 s
+ * while the old rate kept streaming. */
 static void restart_stream(Session *s)
 {
-    xSemaphoreTake(s->mtx, portMAX_DELAY);
     s->streaming = false;
+    __sync_synchronize();
+    const TickType_t deadline = xTaskGetTickCount() + pdMS_TO_TICKS(1000);
+    while (s->in_read && xTaskGetTickCount() < deadline) {
+        vTaskDelay(1);
+    }
     warn_if("stop", esp_rtl_sdr_stop(s->sdr, 0));
     if (start_stream(s) != ESP_OK) {
         s->stop = true;
     }
-    xSemaphoreGive(s->mtx);
 }
 
 static void apply_gain(esp_rtl_sdr_handle_t sdr)
@@ -341,11 +347,15 @@ static void sender_task(void *arg)
         size_t n = 0;
         esp_err_t err = ESP_ERR_INVALID_STATE;
 
-        xSemaphoreTake(s->mtx, portMAX_DELAY);
         if (s->streaming) {
-            err = esp_rtl_sdr_read(s->sdr, buf, CONFIG_RTLTCP_SEND_CHUNK, kReadTimeoutMs, &n);
+            s->in_read = true;
+            __sync_synchronize();
+            if (s->streaming) {      /* re-check: a restart may have begun meanwhile */
+                err = esp_rtl_sdr_read(s->sdr, buf, CONFIG_RTLTCP_SEND_CHUNK, kReadTimeoutMs, &n);
+            }
+            __sync_synchronize();
+            s->in_read = false;
         }
-        xSemaphoreGive(s->mtx);
 
         if (err == ESP_OK && n > 0) {
             if (!send_all(s->sock, buf, n)) {
@@ -378,9 +388,8 @@ static void serve_client(esp_rtl_sdr_handle_t sdr, int sock)
     Session s = {};
     s.sdr = sdr;
     s.sock = sock;
-    s.mtx = xSemaphoreCreateMutex();
     s.ev = xEventGroupCreate();
-    if (!s.mtx || !s.ev) {
+    if (!s.ev) {
         ESP_LOGE(TAG, "out of memory");
         goto cleanup;
     }
@@ -461,9 +470,6 @@ static void serve_client(esp_rtl_sdr_handle_t sdr, int sock)
 cleanup:
     if (s.ev) {
         vEventGroupDelete(s.ev);
-    }
-    if (s.mtx) {
-        vSemaphoreDelete(s.mtx);
     }
 }
 
