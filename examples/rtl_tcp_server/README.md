@@ -70,6 +70,51 @@ as manual step 27. With manual steps the level rose smoothly (std 3 at step 0, 3
 step 15, clipping from step 18). If your spectrum looks flat or distorted, switch to manual gain
 (SDR++: untick AGC / gain slider). `tests/` runs with `--gain-index=12` to avoid the clipping.
 
+## Tested hardware and results
+
+| Item | Value |
+|---|---|
+| Board | Waveshare ESP32-P4-Module-DEV-KIT |
+| Chip | ESP32-P4 rev v3.2, 32 MB PSRAM (200 MHz) |
+| ESP-IDF | v5.5.6 |
+| Dongle | RTL-SDR Blog V4, serial 00000001, USB-A port 1 (enumerated on the root port, high speed) |
+| Network | on-board Ethernet (IP101 driver), DHCP, client on the same LAN |
+| Client | the suite in `tests/` (Python, macOS); SDR++ on macOS was also tried interactively, its version and results were not recorded |
+| Date | 2026-10-29 (one board, one dongle) |
+
+Suite results (2.4 MS/s, manual gain step 12 unless noted): 120 s soak 4.80 MB/s (99.9 % of the
+expected data, longest gap 0.10 s, slowest second 4.59 MB/s); 1.024 / 1.92 / 2.56 / 3.2 MS/s deliver
+98.6-99.8 % (at 3.2 MS/s the driver documents drops, none were seen by the client); HF 10 MHz, 24 MHz,
+433.92 MHz and 1090 MHz stream; reconnects (graceful and after RST) work; a client that stops reading is
+dropped and the next one is served; 555 frequency commands in 30 s and a sweep of all 28 gain steps
+plus RTL AGC keep the stream alive; sample-rate changes come back within the suite's 6 s limit.
+
+### Behaviour you should know about (measured on that setup)
+
+- **First data** arrives about 1.5 s after a client connects: 0.3 s waiting for the client's start-up
+  commands plus about 1.1 s of dongle initialisation.
+- **Changing the sample rate restarts the dongle** (driver requirement): the stream stops and resumes
+  after about 1.4-2.7 s. This figure comes from the board log of restarts that began promptly; the
+  suite only requires "back within 6 s" and passed. An earlier version of this example could begin
+  the restart up to 10 s late (the old rate kept streaming meanwhile); that was a bug in this example,
+  not in the driver, and is fixed.
+- **Changing the frequency (or ppm) retunes the dongle** and pauses the stream for a moment: the longest
+  gap was 0.12 s during 555 frequency commands in 30 s. The server applies at most one change per 200 ms
+  and keeps only the latest, so a client that tunes continuously gets less than the full rate (3.36 MB/s
+  average instead of 4.8 MB/s in one 30 s sweep with 533 commands, measured with an earlier script).
+- **AUTO gain** (the driver's tuner AGC) clipped 55 % of the samples with a strong FM signal at the
+  antenna, the same as manual step 27; manual steps rose smoothly (std 3 at step 0, 32 at step 12,
+  clipping from step 18). One antenna, one location. Use manual gain if the spectrum looks distorted.
+- A client that stops reading is dropped after 5 s without progress; with the default socket buffers a
+  new client was accepted 10-12 s after the stall began.
+- Commands the driver cannot do (IF gain, test mode, direct sampling, offset tuning, xtal) are ignored.
+
+### Not verified
+
+Unplugging the dongle while streaming (`tests/test_90_manual.py`, manual, not run); other boards, other
+RTL-SDR models; Wi-Fi; clients other than the suite and SDR++; runs longer than the 120 s soak in the
+suite; IPv6.
+
 ## Known limits
 
 - One client at a time; IPv4 only; Ethernet only (no Wi-Fi path yet).
