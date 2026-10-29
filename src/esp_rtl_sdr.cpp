@@ -217,6 +217,8 @@ struct UsbSession {
     bool external_host = false; /* app called usb_host_install */
     volatile bool bringing_up = false;
     volatile bool host_task_run = false;
+    /** Set by the host library task on USB_HOST_LIB_EVENT_FLAGS_ALL_FREE. */
+    volatile bool all_devices_free = false;
     TaskHandle_t host_task = nullptr;
     TaskHandle_t host_join_waiter = nullptr;
     RtlClaimTable claims{};
@@ -3113,6 +3115,9 @@ static void host_lib_task_fn(void *arg)
         uint32_t flags = 0;
         /* 50 ms: faster join on uninstall than 100 ms. */
         usb_host_lib_handle_events(pdMS_TO_TICKS(50), &flags);
+        if ((flags & USB_HOST_LIB_EVENT_FLAGS_ALL_FREE) != 0) {
+            s_usb_session.all_devices_free = true;
+        }
     }
     if (s_usb_session.host_join_waiter != nullptr) {
         xTaskNotifyGive(s_usb_session.host_join_waiter);
@@ -3125,6 +3130,7 @@ static constexpr uint32_t kUnplugWaitMs = 2000;      /* plus control_timeout_ms 
 static constexpr uint32_t kUnplugFlushMs = 1000;
 static constexpr uint32_t kUnplugFinalFlushMs = 1000;
 static constexpr uint32_t kEnumCheckEveryMs = 500;
+static constexpr uint32_t kFreeAllWaitMs = 1000;   /* wait for USB_HOST_LIB_EVENT_FLAGS_ALL_FREE on uninstall */
 static constexpr uint32_t kRootPortOffMs = 300; /* VBUS stays off long enough for a device to drop fully */
 
 /* Pump this handle's client events (bulk completions are delivered here) until the bulk URBs have come back
@@ -3422,6 +3428,26 @@ static void session_release(esp_rtl_sdr_handle *h)
 
     if (!we_installed) {
         return;
+    }
+
+    /* usb_host_uninstall() requires every device to be freed first. With a
+     * dongle still attached its EP0 pipe is open and hub_uninstall() aborts in
+     * hcd_port_deinit() (ESP_ERR_INVALID_STATE). All clients are deregistered
+     * by now, so release the devices and let the still-running host library
+     * task report USB_HOST_LIB_EVENT_FLAGS_ALL_FREE (bounded wait). */
+    s_usb_session.all_devices_free = false;
+    const esp_err_t free_err = usb_host_device_free_all();
+    if (free_err == ESP_ERR_NOT_FINISHED) {
+        const TickType_t deadline = xTaskGetTickCount() + pdMS_TO_TICKS(kFreeAllWaitMs);
+        while (!s_usb_session.all_devices_free && xTaskGetTickCount() < deadline) {
+            vTaskDelay(pdMS_TO_TICKS(10));
+        }
+        if (!s_usb_session.all_devices_free) {
+            ESP_LOGW(TAG, "uninstall: devices not freed within %u ms",
+                     static_cast<unsigned>(kFreeAllWaitMs));
+        }
+    } else if (free_err != ESP_OK) {
+        ESP_LOGW(TAG, "usb_host_device_free_all: %s", esp_err_to_name(free_err));
     }
 
     s_usb_session.host_join_waiter = xTaskGetCurrentTaskHandle();
