@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Added
+
+- **`examples/rtl_tcp_server`: an rtl_tcp-compatible network server** (SDR++, GQRX, SDR# can connect to `<board-ip>:1234`).
+  Public API only (`DELIVERY_READ` + `esp_rtl_sdr_read`), Ethernet transport for the Waveshare ESP32-P4-Module-DEV-KIT. Client
+  tuner settings are shadowed and re-applied after each (re)start; a sample-rate change is a stop/start because the driver
+  requires it. Commands with no counterpart in the driver (IF gain, test mode, direct sampling, offset tuning, xtal) are
+  logged and ignored. The wire-protocol layer has host tests; the example is **not hardware-verified yet**.
+
 ## 0.9.3 (2026-10-02) — RF band select, unplug recovery, V4/V4L band select
 
 ### Fixed

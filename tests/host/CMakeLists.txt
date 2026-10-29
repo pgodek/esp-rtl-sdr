@@ -49,6 +49,14 @@ target_include_directories(esp_rtl_sdr_usb_guard_tests PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../../private
 )
 
+add_executable(esp_rtl_sdr_rtl_tcp_proto_tests
+    test_rtl_tcp_proto.cpp
+)
+
+target_include_directories(esp_rtl_sdr_rtl_tcp_proto_tests PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../examples/rtl_tcp_server/main
+)
+
 target_include_directories(esp_rtl_sdr_host_tests PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/stubs
     ${CMAKE_CURRENT_SOURCE_DIR}/../../include
@@ -75,6 +83,7 @@ if(MSVC)
   target_compile_options(esp_rtl_sdr_usb_guard_tests PRIVATE /W4)
   target_compile_options(esp_rtl_sdr_v4_band_tests PRIVATE /W4)
   target_compile_options(esp_rtl_sdr_band_tests PRIVATE /W4)
+  target_compile_options(esp_rtl_sdr_rtl_tcp_proto_tests PRIVATE /W4)
 else()
   target_compile_options(esp_rtl_sdr_host_tests PRIVATE -Wall -Wextra)
   target_compile_options(esp_rtl_sdr_profile_tests PRIVATE -Wall -Wextra)
@@ -82,6 +91,7 @@ else()
   target_compile_options(esp_rtl_sdr_usb_guard_tests PRIVATE -Wall -Wextra)
   target_compile_options(esp_rtl_sdr_v4_band_tests PRIVATE -Wall -Wextra)
   target_compile_options(esp_rtl_sdr_band_tests PRIVATE -Wall -Wextra)
+  target_compile_options(esp_rtl_sdr_rtl_tcp_proto_tests PRIVATE -Wall -Wextra)
 endif()
 
 enable_testing()
@@ -91,3 +101,4 @@ add_test(NAME multi_device COMMAND esp_rtl_sdr_multi_tests)
 add_test(NAME usb_guard COMMAND esp_rtl_sdr_usb_guard_tests)
 add_test(NAME v4_band COMMAND esp_rtl_sdr_v4_band_tests)
 add_test(NAME r820t2_band COMMAND esp_rtl_sdr_band_tests)
+add_test(NAME rtl_tcp_proto COMMAND esp_rtl_sdr_rtl_tcp_proto_tests)
