@@ -4,9 +4,10 @@ An **rtl_tcp**-compatible network server for ESP32-P4 built on the `esp_rtl_sdr`
 public API (no librtlsdr code). Plug an RTL-SDR into the board, connect SDR++, GQRX or
 SDR# with *RTL-TCP* source to `<board-ip>:1234`.
 
-**Status:** implemented, **not hardware-verified**. The wire-protocol layer has host
-tests (`tests/host/test_rtl_tcp_proto.cpp`); the ESP-IDF build and the Ethernet pin map
-below still need a run on a real board. Please report results in an issue or the PR.
+**Status:** hardware-verified on one Waveshare ESP32-P4-Module-DEV-KIT (chip v3.2) with one
+Blog V4, ESP-IDF 5.5.6, macOS client (2026-10-29): the suite in `tests/` ran against the board.
+The wire-protocol layer is also host-tested (`tests/host/test_rtl_tcp_proto.cpp`). Not covered:
+unplugging the dongle while streaming (`tests/test_90_manual.py`, manual), other boards and dongles.
 
 ## Hardware: Waveshare ESP32-P4-Module-DEV-KIT
 
@@ -16,14 +17,13 @@ below still need a run on a real board. Please report results in an issue or the
 | Network | RJ45 Ethernet (internal EMAC + IP101, RMII). |
 | Power | Keep the bias tee **off** unless your accessory needs it; check the port can supply the dongle's current. |
 
-**Unverified:** the Ethernet defaults (MDC 31, MDIO 52, PHY reset 51, PHY address 1) are the
-values of ESP-IDF's ethernet example for the ESP32-P4 Function-EV-Board. On ESP32-P4 ESP-IDF 5.5
-fixes the RMII data pins (TXD0/1 34/35, TX_EN 49, RXD0/1 29/30, CRS_DV 28) and expects the
-50 MHz RMII clock as an **input on GPIO 50** (`ETH_ESP32_EMAC_DEFAULT_CONFIG()`); the example
-does not change that. None of this has been checked against the Waveshare Module-DEV-KIT
-schematic. If `esp_eth` reports no PHY or the link never comes up, adjust MDC/MDIO/reset/address
-under `menuconfig -> rtl_tcp_server -> Ethernet`; a wrong clock source needs a code change in
-`main/net_eth.c` (`emac_cfg.clock_config`).
+**Ethernet:** the defaults (MDC 31, MDIO 52, PHY reset 51, PHY address 1) are the values of
+ESP-IDF's ethernet example for the ESP32-P4 Function-EV-Board and brought the link and a DHCP
+address up on the Waveshare Module-DEV-KIT. On ESP32-P4 ESP-IDF 5.5 fixes the RMII data pins
+(TXD0/1 34/35, TX_EN 49, RXD0/1 29/30, CRS_DV 28) and expects the 50 MHz RMII clock as an
+**input on GPIO 50** (`ETH_ESP32_EMAC_DEFAULT_CONFIG()`); the example does not change that.
+For another board adjust MDC/MDIO/reset/address under `menuconfig -> rtl_tcp_server -> Ethernet`;
+a different clock source needs a code change in `main/net_eth.c` (`emac_cfg.clock_config`).
 
 ## Build (ESP-IDF 5.5.x)
 
@@ -56,6 +56,19 @@ Data path: `esp_rtl_sdr_read()` (pull ring, `DELIVERY_READ`) -> sender task -> T
 status line every 5 s shows TCP MB/s, effective USB sample rate and the driver's
 `ring_overrun` / `slot_starve` / USB error counters, so you can tell USB starvation from
 a slow network.
+
+## Tests
+
+`tests/` holds a pytest suite that runs against a mock server (CI) or a real board
+(`tests/run_suite.sh <board-ip>`); see `tests/README.md`.
+
+## Gain
+
+On the Waveshare ESP32-P4-Module-DEV-KIT with a Blog V4 (one unit, strong FM at the antenna) the
+driver's AUTO gain behaved like the maximum gain: 55 % of the samples were clipped at 100 MHz, the same
+as manual step 27. With manual steps the level rose smoothly (std 3 at step 0, 32 at step 12, 67 at
+step 15, clipping from step 18). If your spectrum looks flat or distorted, switch to manual gain
+(SDR++: untick AGC / gain slider). `tests/` runs with `--gain-index=12` to avoid the clipping.
 
 ## Known limits
 
