@@ -69,6 +69,7 @@ Product vision: **`docs/VISION.md`**. Silicon / DS map: **`docs/SILICON.md`**.
 | Area | State | Boundary |
 |---|---|---|
 | Lifecycle install/start/stop/uninstall | **Implemented** | |
+| `uninstall()` with a dongle attached | **Fixed; hardware-verified in one run** | 2026-10-29, Waveshare ESP32-P4-Module-DEV-KIT (chip v3.2), ESP-IDF 5.5.6, RTL-SDR Blog V4: `p4_serial_smoke` ends `SMOKE uninstall PASS`. Before the fix `usb_host_uninstall()` aborted in `hcd_port_deinit()`. A run where the dongle failed to enumerate (`candidates=0`) still aborted; not investigated or fixed. |
 | Continuous bulk IQ (multi-URB) | **Implemented** | Blog V4 fully; Nooelec SMArt v5 PC capture includes long IQ runs, while ESP32-P4 streaming/soak remains pending; Blog V3/V3c streams without crash (hardware-verified 2026-09-11), tune/gain accuracy still **provisional** |
 | In-stream `retune_hz` | **Implemented** | Drain bulk before EP0; **async from callback** (0.7.3) |
 | Metrics | **Implemented** | `get_metrics` |
