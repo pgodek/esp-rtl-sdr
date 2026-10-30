@@ -45,7 +45,7 @@ jobs:
       - name: rtl_tcp_server protocol suite (mock server)
         if: runner.os == 'Linux'
         run: |
-          python3 -m pip install pytest
+          python3 -m pip install pytest numpy
           python3 -m pytest examples/rtl_tcp_server/tests -m "not slow" -q
 
       - name: Configure & build (Windows)

@@ -20,14 +20,14 @@
 #include "esp_rtl_sdr.h"
 #include "rtl_tcp_server.h"
 
-static const uint32_t kN = 8192;               /* must match pattern.py */
+static const uint32_t kN = 16384;              /* must match pattern.py */
 static const uint32_t kColSamples = kN * 250;
 
 struct esp_rtl_sdr_handle {};
 
 namespace {
 std::mutex g_mu;
-std::vector<uint8_t> g_table;                  /* cols * 2N bytes */
+std::vector<uint8_t> g_table;                  /* per column: crossfade block, steady block, 2N bytes each */
 uint32_t g_cols = 0;
 esp_rtl_sdr_state_t g_state = ESP_RTL_SDR_STATE_IDLE;
 uint32_t g_rate = 0;
@@ -45,14 +45,23 @@ double now_s()
 void fill(uint8_t *dst, uint64_t pos, size_t n)
 {
     const uint64_t col_bytes = 2ull * kColSamples;
+    const size_t block = 2 * (size_t)kN;
     while (n > 0) {
         const uint32_t col = (uint32_t)((pos / col_bytes) % g_cols);
-        const uint32_t off = (uint32_t)(pos % (2 * kN));
-        size_t chunk = 2 * kN - off;
+        const uint64_t in_col = pos % col_bytes;
+        const uint8_t *base = &g_table[(size_t)col * 2 * block];
+        const uint8_t *src;
+        size_t chunk;
+        if (in_col < block) {                       /* crossfade from the previous column */
+            src = base + in_col;
+            chunk = block - (size_t)in_col;
+        } else {                                    /* steady block, periodic */
+            const size_t off = (size_t)(in_col % block);
+            src = base + block + off;
+            chunk = block - off;
+        }
         if (chunk > n) chunk = n;
-        const uint64_t to_col_end = col_bytes - pos % col_bytes;
-        if (chunk > to_col_end) chunk = (size_t)to_col_end;
-        memcpy(dst, &g_table[(size_t)col * 2 * kN + off], chunk);
+        memcpy(dst, src, chunk);
         dst += chunk; pos += chunk; n -= chunk;
     }
 }
@@ -185,7 +194,7 @@ int main(int argc, char **argv)
     memcpy(&n, head + 4, 4); memcpy(&cs, head + 8, 4); memcpy(&cols, head + 12, 4);
     if (n != kN || cs != kColSamples || cols == 0) { fprintf(stderr, "pattern file does not match\n"); return 2; }
     g_cols = cols;
-    g_table.resize((size_t)cols * 2 * kN);
+    g_table.resize((size_t)cols * 4 * kN);
     if (fread(g_table.data(), 1, g_table.size(), f) != g_table.size()) { fprintf(stderr, "short file\n"); return 2; }
     fclose(f);
     fprintf(stderr, "rtl_tcp host: %u columns, %s\n", cols, g_pace ? "real-time pacing" : "unpaced");

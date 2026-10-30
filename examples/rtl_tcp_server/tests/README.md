@@ -71,21 +71,23 @@ issue or PR to document a run.
 a thin FreeRTOS/`esp_log` shim and a fake `esp_rtl_sdr` driver) and feeds it a known signal instead of a
 dongle. It reads the TCP stream and compares it **bit for bit** with what the driver produced, so a byte
 the server drops, repeats or shifts is caught (a shift by one byte would swap I and Q). It checks the
-first 12 MB, a new connection, a client that stops reading for 1.5 s, and the clean cut of a sample-rate
-restart. It needs a C++ compiler (skipped without one) and runs in the normal CI step. It does not test
-USB, the dongle, lwIP or real throughput.
+first 20 MB, a new connection, a client that stops reading for 1.5 s, and the clean cut of a sample-rate
+restart. It needs a C++ compiler and `numpy` (skipped without either) and runs in the normal CI step. It does not
+test USB, the dongle, lwIP or real throughput.
 
-The reference signal (`host_server/pattern.py`) paints **ALL YOUR BASE ARE BELONG TO US** into the waterfall
-(rotated by 90 degrees, reading downwards; the waveform is a table of 180 columns, one spectrum each, sent in
-reverse order because SDR++ draws the newest line on top; `pattern.py write FILE --forward` for a client that
-scrolls the other way). A text pixel is
-a 40 kHz wide block of noise that lasts 1 s at 2.048 MS/s (about 20 waterfall rows), so pixels are roughly
-square and the whole loop takes about 3 minutes; zoom the waterfall in on the centre of the band.
-To look at it in SDR++ or GQRX:
+The reference signal (`host_server/pattern.py`) paints **ALL YOUR BASE ARE BELONG TO US** into the waterfall with
+FM "stations": each lit pixel is a carrier with +-35 kHz deviation, made-up audio and a 19 kHz stereo pilot, on a
+low noise floor over the whole band; columns are crossfaded so no clicks splash across the band. The text is
+transmitted in its own order, so it can be read as it goes by: SDR++ draws the newest line on top, so it reads
+**from the bottom to the top**, letters turned 90 degrees to the left (like a book spine). `--down` sends the columns
+in reverse and reads top to bottom instead (but then the end of the text comes first). One column lasts 2 s at
+2.048 MS/s, the whole loop 6 minutes. To look at it in SDR++ or GQRX:
 
 ```bash
 host_server/run_host.sh        # builds the server, serves the signal at real-time speed on :1234
+DOWN=1 host_server/run_host.sh # reads top to bottom instead
 ```
 
-then add an RTL-TCP source `127.0.0.1:1234` at 1.024-2.4 MS/s. `python3 host_server/pattern.py ascii`
-prints the same picture as text.
+then add an RTL-TCP source `127.0.0.1:1234` at 2.048 MS/s (the timing and the 100 kHz carrier spacing scale with the
+rate). `python3 host_server/pattern.py ascii` prints the same picture as text. The table file is 12 MB, which is why
+it is not embedded in the firmware.

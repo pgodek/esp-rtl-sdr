@@ -1,10 +1,10 @@
 """T6: data integrity of the real server code against a known test signal, without a dongle.
 
 rtl_tcp_server.cpp is compiled for the host (host_server/) together with a fake esp_rtl_sdr driver
-that delivers the reference signal of host_server/pattern.py: a looping I/Q stream whose waterfall
-shows "ALL YOUR BASE ARE BELONG TO US" (rotated by 90 degrees, reading downwards). The tests read the
-TCP stream and compare it bit for bit with the signal the driver produced, so any byte the server
-drops, repeats, reorders or shifts (which would swap I and Q) is caught. Needs a C++ compiler.
+that delivers the reference signal of host_server/pattern.py: a looping I/Q stream of FM "stations" whose
+waterfall shows "ALL YOUR BASE ARE BELONG TO US" (turned 90 degrees, reading upwards as it is transmitted).
+The tests read the TCP stream and compare it bit for bit with the signal the driver produced, so any byte the
+server drops, repeats, reorders or shifts (which would swap I and Q) is caught. Needs a C++ compiler and numpy.
 
 To look at the signal in SDR++ (rate 1.024-2.4 MS/s works well):
     python3 host_server/pattern.py write /tmp/pattern.bin
@@ -25,6 +25,8 @@ from pathlib import Path
 
 import pytest
 
+pytest.importorskip("numpy")
+
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[2]
 sys.path.insert(0, str(HERE / "host_server"))
@@ -32,7 +34,7 @@ import pattern as P  # noqa: E402
 
 from rtl_tcp_client import CMD_RATE  # noqa: E402
 
-COL_BYTES = 2 * P.COL_SAMPLES                  # bytes per text column (about 4 MB)
+COL_BYTES = 2 * P.COL_SAMPLES                  # bytes per text column (about 8 MB)
 
 
 @pytest.fixture(scope="module")
@@ -130,16 +132,22 @@ def first_diff(a: bytes, b: bytes) -> int:
 # --- the signal itself -------------------------------------------------------------------------
 
 def test_signal_paints_the_text(table):
-    """Every lit pixel of the bitmap is a strong tone, every unlit one is silent."""
+    """Every lit pixel of the bitmap is an FM carrier well above the noise floor, every dark one is noise."""
     bm = P.bitmap_columns()
     assert len(table) == len(bm)
-    for c, w in enumerate(table):
-        lv = P.pixel_levels(w)
+    for c, col in enumerate(table):
+        lv = P.pixel_levels(col)
         for p in range(P.GLYPH_H):
             if bm[c][p]:
-                assert lv[p] > P.LIT_MIN, f"column {c} pixel {p} should be lit ({lv[p]:.2f})"
+                assert lv[p] > P.LIT_DB, f"column {c} pixel {p} should be lit ({lv[p]:.1f} dB)"
             else:
-                assert lv[p] < P.DARK_MAX, f"column {c} pixel {p} should be dark ({lv[p]:.2f})"
+                assert lv[p] < P.DARK_DB, f"column {c} pixel {p} should be dark ({lv[p]:.1f} dB)"
+
+
+def test_every_column_is_unique(table):
+    """Each column has its own audio and noise, so a receiver can tell where in the loop it is."""
+    assert len({c.wave for c in table}) == len(table)
+    assert len({c.trans for c in table}) == len(table)
 
 
 def test_checker_catches_damage(table):
@@ -147,7 +155,7 @@ def test_checker_catches_damage(table):
     start = 4 * COL_BYTES + 6 * 2 * P.N + 2 * 7          # arbitrary even offset inside column 4
     good = P.expected(table, start, 3 * COL_BYTES)
     blocks, changes, err = P.follow(table, good)
-    assert err is None and changes >= 2 and blocks > 500, (blocks, changes, err)
+    assert err is None and changes >= 2 and blocks > 300, (blocks, changes, err)
 
     cut = len(good) // 2
     assert P.follow(table, good[:cut] + good[cut + 1:])[2] is not None                   # one byte lost
@@ -161,10 +169,10 @@ def test_checker_catches_damage(table):
 # --- the server --------------------------------------------------------------------------------
 
 def test_stream_is_bit_exact(server, table):
-    """First 14 MB (three text columns, three column changes) arrive identical to what the driver produced."""
+    """First 20 MB (a bit more than two text columns, two column changes) arrive identical to what the driver produced."""
     srv = server()
     c = srv.connect()
-    n = 14 * 1024 * 1024
+    n = 20 * 1024 * 1024
     got = read_exact(c, n)
     c.close()
     exp = P.expected(table, 0, n)
@@ -202,7 +210,7 @@ def test_rate_change_cuts_cleanly(server, table):
     head = read_exact(c, COL_BYTES + (1 << 19))        # past column 0, so column 0 is a clean restart marker
     c.sendall(struct.pack(">BI", CMD_RATE, 1_024_000))
     data = bytearray(head)
-    marker = table[0] * 2
+    marker = table[0].trans + table[0].wave                # the first two blocks of column 0
     restart = -1
     deadline = time.time() + 30
     while time.time() < deadline and restart < 0:
@@ -210,7 +218,7 @@ def test_rate_change_cuts_cleanly(server, table):
         chunk = c.recv(1 << 20)
         assert chunk, "stream ended"
         data += chunk
-        restart = data.find(marker, len(head) - 4 * P.N)   # column 0 again = stream rewound
+        restart = data.find(marker, len(head) - 8 * P.N)   # column 0 again = stream rewound
     assert restart >= 0, "no restart seen after the rate change"
     data += read_exact(c, 2 << 20)
     c.close()
