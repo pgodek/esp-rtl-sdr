@@ -80,6 +80,7 @@ class HostServer:
         assert ready.wait(10), "server did not start: " + "\n".join(self.log)
 
     def connect(self):
+        assert self.p.poll() is None, f"server died (exit {self.p.returncode}):\n" + "\n".join(self.log[-8:])
         c = socket.create_connection(("127.0.0.1", self.port), timeout=10)
         greeting = b""
         while len(greeting) < 12:

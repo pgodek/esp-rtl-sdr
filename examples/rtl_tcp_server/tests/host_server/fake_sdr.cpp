@@ -9,6 +9,7 @@
  *          integrity tests want.
  * Stream start (esp_rtl_sdr_start_hz) rewinds the signal to sample 0, like a fresh capture.
  */
+#include <csignal>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -164,6 +165,8 @@ esp_err_t esp_rtl_sdr_get_stream_stats(esp_rtl_sdr_handle_t, esp_rtl_sdr_stream_
 
 int main(int argc, char **argv)
 {
+    /* lwIP on the board reports a closed peer as an error, a POSIX host kills the process with SIGPIPE. */
+    signal(SIGPIPE, SIG_IGN);
     const char *pattern = nullptr;
     int port = 1234;
     for (int i = 1; i < argc; i++) {
