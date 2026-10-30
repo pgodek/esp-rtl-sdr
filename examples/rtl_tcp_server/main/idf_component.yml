@@ -1,1 +1,6 @@
-dependencies: {}
+dependencies:
+  # IDF 6.x moved the IP101 PHY driver out of esp_eth into the component registry.
+  espressif/ip101:
+    version: ">=1.1.0"
+    rules:
+      - if: "idf_version >=6.0"

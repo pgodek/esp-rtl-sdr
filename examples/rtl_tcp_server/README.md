@@ -25,13 +25,17 @@ address up on the Waveshare Module-DEV-KIT. On ESP32-P4 ESP-IDF 5.5 fixes the RM
 For another board adjust MDC/MDIO/reset/address under `menuconfig -> rtl_tcp_server -> Ethernet`;
 a different clock source needs a code change in `main/net_eth.c` (`emac_cfg.clock_config`).
 
-## Build (ESP-IDF 5.5.x)
+## Build (ESP-IDF 5.5.x and 6.1)
 
 ```bash
 cd examples/rtl_tcp_server
 idf.py set-target esp32p4
 idf.py build flash monitor
 ```
+
+On ESP-IDF 6.x the managed components `espressif/usb` and `espressif/ip101` are fetched
+automatically on the first build (the IP101 PHY driver is no longer part of `esp_eth`).
+The 6.1 build and run are not verified yet; the hardware results below are from 5.5.6.
 
 The log prints the IP address (`got IP ... - rtl_tcp port 1234`). Then in the client choose
 *RTL-TCP* and enter `IP:1234`.

@@ -2,10 +2,16 @@
 #include "esp_eth.h"
 #include "esp_event.h"
 #include "esp_log.h"
+#include "esp_idf_version.h"
 #include "esp_netif.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
 #include "sdkconfig.h"
+
+#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(6, 0, 0)
+/* IDF 6.x: IP101 PHY driver is the managed component espressif/ip101. */
+#include "esp_eth_phy_ip101.h"
+#endif
 
 #include "net_eth.h"
 

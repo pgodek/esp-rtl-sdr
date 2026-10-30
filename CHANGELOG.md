@@ -22,6 +22,7 @@
   tuner settings are shadowed and re-applied after each (re)start; a sample-rate change is a stop/start because the driver
   requires it. Commands with no counterpart in the driver (IF gain, test mode, direct sampling, offset tuning, xtal) are
   logged and ignored. The wire-protocol layer has host tests; the example and its pytest suite (`examples/rtl_tcp_server/tests`) ran on a Waveshare ESP32-P4-Module-DEV-KIT with a Blog V4 (see PROJECT_TRUTH).
+  ESP-IDF 6.1: builds against the managed `espressif/usb` 1.6.0 and `espressif/ip101` (the IP101 PHY driver left `esp_eth` in IDF 6.x) with C++17 pinned; **compile and hardware runs on 6.1 are not done yet** (hardware results above are ESP-IDF 5.5.6).
 
 ## 0.9.3 (2026-10-02) — RF band select, unplug recovery, V4/V4L band select
 
