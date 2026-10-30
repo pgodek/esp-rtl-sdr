@@ -17,4 +17,4 @@ args=()
 if [[ $# -gt 0 && "$1" != -* ]]; then
   args+=("--host=$1"); shift
 fi
-exec .venv/bin/python -m pytest "${args[@]}" "$@"
+exec .venv/bin/python -m pytest ${args[@]+"${args[@]}"} "$@"
