@@ -5,10 +5,12 @@ fixed spectrum held for COL_SAMPLES samples; the waterfall (time runs downwards 
 therefore shows the text rotated by 90 degrees, reading top to bottom, glyph tops pointing to
 the right (highest frequency).
 
-Layout (complex baseband, N = 1024 FFT bins, bin spacing = rate / 1024):
+Layout (complex baseband, N = 8192 bins, bin spacing = rate / 8192, about 250 Hz at 2.048 MS/s):
 
-* 7 glyph rows x 64 bins = 448 bins centred on DC, glyph row 0 (top) at the highest bins,
-  8 tones per pixel.
+* 7 glyph rows x 160 bins = 1120 bins (14 % of the bandwidth) centred on DC, glyph row 0 (top)
+  at the highest bins. One pixel is 40 kHz wide at 2.048 MS/s and lasts 1 s, which is about 20 rows of a
+  20 fps waterfall: roughly square pixels. A lit pixel is a tone on every bin with pseudo-random phases, i.e. a block
+  of band-limited noise, so it fills solidly in the waterfall whatever the FFT size of the viewer.
 * Two "address" combs outside the text so that every column is unique and the receiver can
   find out where it is in the loop: 12 tones on the low side (column // 16), 16 on the high
   side (column % 16). They show up as a small blob moving along each edge of the waterfall.
@@ -24,18 +26,19 @@ import cmath
 import math
 import struct
 
-N = 1024                    # samples per period of a column waveform
-COL_SAMPLES = N * 256       # samples a column lasts (about 128 ms at 2.048 MS/s)
+N = 8192                    # samples per period of a column waveform
+COL_SAMPLES = N * 250       # samples a column lasts: 2048000 = 1 s at 2.048 MS/s (about 20 waterfall rows)
 TEXT = "ALL YOUR BASE ARE BELONG TO US"
 GLYPH_W, GLYPH_H, GAP = 5, 7, 1
-PIXEL_BINS = 64
-TONES_PER_PIXEL = 8
-TEXT_LOW_BIN = -(GLYPH_H * PIXEL_BINS) // 2          # -224
+PIXEL_BINS = 160
+TEXT_LOW_BIN = -(GLYPH_H * PIXEL_BINS) // 2          # -560
+LIT_MIN, DARK_MAX = 0.3, 0.1                         # pixel_levels() bounds, see test_signal_paints_the_text
 MAGIC = b"RTLP"
 PEAK = 118                                            # max |I-127.5| / |Q-127.5|
-ID_GAIN = 3.0                                         # id tones are brighter than text tones
-HI_ID_BIN0, HI_ID_STEP = -500, 8                      # low side: column // 16 (0..11)
-LO_ID_BIN0, LO_ID_STEP = 260, 16                      # high side: column % 16 (0..15)
+ID_GAIN = 20.0                                        # id tones are single tones, brighter than a noise band
+FLOOR_GAIN = 0.05                                     # whole-band noise under everything: an even dark background
+HI_ID_BIN0, HI_ID_STEP = -4000, 64                    # low side: column // 16 (0..11)
+LO_ID_BIN0, LO_ID_STEP = 2080, 128                    # high side: column % 16 (0..15)
 
 FONT = {
     "A": ("01110", "10001", "10001", "11111", "10001", "10001", "10001"),
@@ -68,46 +71,63 @@ def bitmap_columns() -> list[list[int]]:
 COLS = len(bitmap_columns())                    # 180 text columns + the 6 gap columns inside it
 
 
-def _tone(table: list[complex], bin_: int, phase: float, gain: float) -> None:
-    for s in range(N):
-        table[s] += gain * cmath.exp(1j * (2 * math.pi * bin_ * s / N + phase))
+def _fft(x: list[complex]) -> list[complex]:
+    """In-place iterative radix-2 FFT (forward), len(x) a power of two."""
+    n = len(x)
+    j = 0
+    for i in range(1, n):
+        bit = n >> 1
+        while j & bit:
+            j ^= bit
+            bit >>= 1
+        j ^= bit
+        if i < j:
+            x[i], x[j] = x[j], x[i]
+    size = 2
+    while size <= n:
+        half = size // 2
+        step = cmath.exp(-2j * math.pi / size)
+        for start in range(0, n, size):
+            w = 1 + 0j
+            for k in range(start, start + half):
+                u, v = x[k], x[k + half] * w
+                x[k], x[k + half] = u + v, u - v
+                w *= step
+        size *= 2
+    return x
 
 
-def _tone_fast(out: list[complex], bin_: int, phase: float, gain: float, cs: list[complex]) -> None:
-    ph = cmath.exp(1j * phase) * gain
-    k = bin_ % N
-    for s in range(N):
-        out[s] += ph * cs[(k * s) % N]
+def _band(lo_bin: int, nbins: int, seed: int) -> list[complex]:
+    """N samples of a block of noise: one tone per bin in [lo_bin, lo_bin + nbins), pseudo-random phases
+    (a 64-bit LCG, so the result does not depend on the Python version)."""
+    spec = [0j] * N
+    x = (seed * 2862933555777941757 + 3037000493) & 0xFFFFFFFFFFFFFFFF
+    for b in range(lo_bin, lo_bin + nbins):
+        x = (x * 6364136223846793005 + 1442695040888963407) & 0xFFFFFFFFFFFFFFFF
+        spec[b % N] = cmath.exp(2j * math.pi * (x >> 11) / (1 << 53))
+    # inverse transform via the forward one: ifft(X) = conj(fft(conj(X)))   (unnormalised)
+    t = _fft([v.conjugate() for v in spec])
+    return [v.conjugate() for v in t]
+
+
+def _single_tone(bin_: int, gain: float) -> list[complex]:
+    return [gain * cmath.exp(2j * math.pi * ((bin_ * s) % N) / N) for s in range(N)]
 
 
 def build_table() -> list[bytes]:
     """COLS byte strings of 2*N bytes (interleaved I, Q), already quantised."""
-    cs = [cmath.exp(2j * math.pi * s / N) for s in range(N)]
-    ntones = GLYPH_H * TONES_PER_PIXEL
-    pixel_wave = []                                          # one waveform per glyph row
-    idx = 0
+    pixel_wave = []                                          # one noise block per glyph row
     for p in range(GLYPH_H):
-        w = [0j] * N
         base = TEXT_LOW_BIN + (GLYPH_H - 1 - p) * PIXEL_BINS
-        for t in range(TONES_PER_PIXEL):
-            b = base + t * (PIXEL_BINS // TONES_PER_PIXEL) + PIXEL_BINS // TONES_PER_PIXEL // 2
-            _tone_fast(w, b, math.pi * idx * idx / ntones, 1.0, cs)   # Schroeder phases: low crest factor
-            idx += 1
-        pixel_wave.append(w)
-    hi_wave, lo_wave = [], []
-    for i in range(12):
-        w = [0j] * N
-        _tone_fast(w, HI_ID_BIN0 + i * HI_ID_STEP, 0.0, ID_GAIN, cs)
-        hi_wave.append(w)
-    for i in range(16):
-        w = [0j] * N
-        _tone_fast(w, LO_ID_BIN0 + i * LO_ID_STEP, 0.0, ID_GAIN, cs)
-        lo_wave.append(w)
+        pixel_wave.append(_band(base, PIXEL_BINS, p + 1))
+    hi_wave = [_single_tone(HI_ID_BIN0 + i * HI_ID_STEP, ID_GAIN) for i in range(12)]
+    lo_wave = [_single_tone(LO_ID_BIN0 + i * LO_ID_STEP, ID_GAIN) for i in range(16)]
 
+    floor = [FLOOR_GAIN * v for v in _band(-N // 2, N, 99)]
     cols = bitmap_columns()
     waves = []
     for c in range(COLS):
-        w = [0j] * N
+        w = list(floor)
         for p in range(GLYPH_H):
             if cols[c][p]:
                 pw = pixel_wave[p]
@@ -214,23 +234,22 @@ def follow(table: list[bytes], data: bytes):
 
 
 def pixel_levels(wave: bytes) -> list[float]:
-    """Magnitude of the first tone of each glyph row (index 0 = glyph top = highest frequency)."""
+    """Magnitude of the centre bin of each glyph row (index 0 = glyph top = highest frequency)."""
     z = [complex(wave[2 * s] - 127.5, wave[2 * s + 1] - 127.5) for s in range(N)]
     out = []
     for p in range(GLYPH_H):
-        b = TEXT_LOW_BIN + (GLYPH_H - 1 - p) * PIXEL_BINS + PIXEL_BINS // TONES_PER_PIXEL // 2
-        acc = sum(z[s] * cmath.exp(-2j * math.pi * b * s / N) for s in range(N)) / N
+        b = TEXT_LOW_BIN + (GLYPH_H - 1 - p) * PIXEL_BINS + PIXEL_BINS // 2
+        acc = sum(z[s] * cmath.exp(-2j * math.pi * ((b * s) % N) / N) for s in range(N)) / N
         out.append(abs(acc))
     return out
 
 
 def render_ascii(table: list[bytes]) -> str:
-    """The waterfall as text: one line per column (time runs downwards), frequency increases to the
-    right. A lit pixel has a tone about 100x stronger than an unlit one."""
+    """The waterfall as text: one line per column (time runs downwards), frequency increases to the right."""
     lines = []
     for w in table:
         lv = pixel_levels(w)
-        lines.append("".join("##" if lv[p] > 3.0 else "  " for p in range(GLYPH_H - 1, -1, -1)))
+        lines.append("".join("##" if lv[p] > LIT_MIN else "  " for p in range(GLYPH_H - 1, -1, -1)))
     return "\n".join(lines)
 
 

@@ -32,7 +32,7 @@ import pattern as P  # noqa: E402
 
 from rtl_tcp_client import CMD_RATE  # noqa: E402
 
-COL_BYTES = 2 * P.COL_SAMPLES                  # bytes per text column (512 KiB)
+COL_BYTES = 2 * P.COL_SAMPLES                  # bytes per text column (about 4 MB)
 
 
 @pytest.fixture(scope="module")
@@ -136,9 +136,9 @@ def test_signal_paints_the_text(table):
         lv = P.pixel_levels(w)
         for p in range(P.GLYPH_H):
             if bm[c][p]:
-                assert lv[p] > 3.0, f"column {c} pixel {p} should be lit ({lv[p]:.2f})"
+                assert lv[p] > P.LIT_MIN, f"column {c} pixel {p} should be lit ({lv[p]:.2f})"
             else:
-                assert lv[p] < 0.5, f"column {c} pixel {p} should be dark ({lv[p]:.2f})"
+                assert lv[p] < P.DARK_MAX, f"column {c} pixel {p} should be dark ({lv[p]:.2f})"
 
 
 def test_checker_catches_damage(table):
@@ -160,10 +160,10 @@ def test_checker_catches_damage(table):
 # --- the server --------------------------------------------------------------------------------
 
 def test_stream_is_bit_exact(server, table):
-    """First 12 MB (23 text columns) arrive identical to what the driver produced."""
+    """First 14 MB (three text columns, three column changes) arrive identical to what the driver produced."""
     srv = server()
     c = srv.connect()
-    n = 12 * 1024 * 1024
+    n = 14 * 1024 * 1024
     got = read_exact(c, n)
     c.close()
     exp = P.expected(table, 0, n)
@@ -198,18 +198,18 @@ def test_rate_change_cuts_cleanly(server, table):
     what comes after it must both be undamaged signal."""
     srv = server(pace=True)
     c = srv.connect()
-    head = read_exact(c, 1 << 20)
+    head = read_exact(c, COL_BYTES + (1 << 19))        # past column 0, so column 0 is a clean restart marker
     c.sendall(struct.pack(">BI", CMD_RATE, 1_024_000))
     data = bytearray(head)
     marker = table[0] * 2
     restart = -1
-    deadline = time.time() + 15
+    deadline = time.time() + 30
     while time.time() < deadline and restart < 0:
         c.settimeout(5)
         chunk = c.recv(1 << 20)
         assert chunk, "stream ended"
         data += chunk
-        restart = data.find(marker, 1 << 20)           # column 0 again = stream rewound
+        restart = data.find(marker, len(head) - 4 * P.N)   # column 0 again = stream rewound
     assert restart >= 0, "no restart seen after the rate change"
     data += read_exact(c, 2 << 20)
     c.close()

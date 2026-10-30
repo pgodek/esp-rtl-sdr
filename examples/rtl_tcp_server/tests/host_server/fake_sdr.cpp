@@ -19,8 +19,8 @@
 #include "esp_rtl_sdr.h"
 #include "rtl_tcp_server.h"
 
-static const uint32_t kN = 1024;               /* must match pattern.py */
-static const uint32_t kColSamples = kN * 256;
+static const uint32_t kN = 8192;               /* must match pattern.py */
+static const uint32_t kColSamples = kN * 250;
 
 struct esp_rtl_sdr_handle {};
 

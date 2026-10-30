@@ -76,7 +76,9 @@ restart. It needs a C++ compiler (skipped without one) and runs in the normal CI
 USB, the dongle, lwIP or real throughput.
 
 The reference signal (`host_server/pattern.py`) paints **ALL YOUR BASE ARE BELONG TO US** into the waterfall
-(rotated by 90 degrees, reading downwards; the waveform is a table of 180 columns, one spectrum each).
+(rotated by 90 degrees, reading downwards; the waveform is a table of 180 columns, one spectrum each). A text pixel is
+a 40 kHz wide block of noise that lasts 1 s at 2.048 MS/s (about 20 waterfall rows), so pixels are roughly
+square and the whole loop takes about 3 minutes; zoom the waterfall in on the centre of the band.
 To look at it in SDR++ or GQRX:
 
 ```bash
