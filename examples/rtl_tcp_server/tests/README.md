@@ -64,3 +64,24 @@ issue or PR to document a run.
 - T5 simulates a client that stops reading. A cable pulled without a FIN is covered by the same
   server code path (send stall) plus TCP keepalive, which this suite cannot trigger on its own.
 - The suite never enables the bias tee.
+
+## Signal-integrity test without a dongle (T6)
+
+`test_50_pattern.py` compiles the real `main/rtl_tcp_server.cpp` for the host (`host_server/`:
+a thin FreeRTOS/`esp_log` shim and a fake `esp_rtl_sdr` driver) and feeds it a known signal instead of a
+dongle. It reads the TCP stream and compares it **bit for bit** with what the driver produced, so a byte
+the server drops, repeats or shifts is caught (a shift by one byte would swap I and Q). It checks the
+first 12 MB, a new connection, a client that stops reading for 1.5 s, and the clean cut of a sample-rate
+restart. It needs a C++ compiler (skipped without one) and runs in the normal CI step. It does not test
+USB, the dongle, lwIP or real throughput.
+
+The reference signal (`host_server/pattern.py`) paints **ALL YOUR BASE ARE BELONG TO US** into the waterfall
+(rotated by 90 degrees, reading downwards; the waveform is a table of 180 columns, one spectrum each).
+To look at it in SDR++ or GQRX:
+
+```bash
+host_server/run_host.sh        # builds the server, serves the signal at real-time speed on :1234
+```
+
+then add an RTL-TCP source `127.0.0.1:1234` at 1.024-2.4 MS/s. `python3 host_server/pattern.py ascii`
+prints the same picture as text.
