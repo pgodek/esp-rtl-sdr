@@ -1,9 +1,11 @@
 """Reference test signal: "ALL YOUR BASE ARE BELONG TO US" painted into the waterfall.
 
 The stream is a looping CU8 I/Q signal. Each *column* of the text bitmap is one
-fixed spectrum held for COL_SAMPLES samples; the waterfall (time runs downwards in SDR++)
-therefore shows the text rotated by 90 degrees, reading top to bottom, glyph tops pointing to
-the right (highest frequency).
+fixed spectrum held for COL_SAMPLES samples. SDR++ draws the newest line at the top and lets older
+ones scroll down, so the columns are SENT IN REVERSE ORDER (TIME_REVERSED): the first text column is
+transmitted last and ends up at the top. The waterfall then shows the text rotated by 90 degrees,
+reading top to bottom, glyph tops pointing to the right (highest frequency). A viewer that scrolls
+the other way needs `pattern.py write FILE --forward`.
 
 Layout (complex baseband, N = 8192 bins, bin spacing = rate / 8192, about 250 Hz at 2.048 MS/s):
 
@@ -29,6 +31,7 @@ import struct
 N = 8192                    # samples per period of a column waveform
 COL_SAMPLES = N * 250       # samples a column lasts: 2048000 = 1 s at 2.048 MS/s (about 20 waterfall rows)
 TEXT = "ALL YOUR BASE ARE BELONG TO US"
+TIME_REVERSED = True        # send the last text column first, see above (--forward turns it off)
 GLYPH_W, GLYPH_H, GAP = 5, 7, 1
 PIXEL_BINS = 160
 TEXT_LOW_BIN = -(GLYPH_H * PIXEL_BINS) // 2          # -560
@@ -58,14 +61,15 @@ FONT = {
 
 
 def bitmap_columns() -> list[list[int]]:
-    """Text bitmap as a list of columns; each column is 7 ints (row 0 = glyph top)."""
+    """Text bitmap as a list of columns in the order they are transmitted; each column is 7 ints
+    (row 0 = glyph top)."""
     cols = []
     for ch in TEXT:
         g = FONT[ch]
         for x in range(GLYPH_W):
             cols.append([int(g[y][x]) for y in range(GLYPH_H)])
         cols.append([0] * GLYPH_H)              # gap after every char (also after the last: loop gap)
-    return cols
+    return cols[::-1] if TIME_REVERSED else cols
 
 
 COLS = len(bitmap_columns())                    # 180 text columns + the 6 gap columns inside it
@@ -245,20 +249,23 @@ def pixel_levels(wave: bytes) -> list[float]:
 
 
 def render_ascii(table: list[bytes]) -> str:
-    """The waterfall as text: one line per column (time runs downwards), frequency increases to the right."""
+    """The waterfall as text, as SDR++ shows it: the newest line (last column sent) on top, frequency
+    increasing to the right."""
     lines = []
     for w in table:
         lv = pixel_levels(w)
         lines.append("".join("##" if lv[p] > LIT_MIN else "  " for p in range(GLYPH_H - 1, -1, -1)))
-    return "\n".join(lines)
+    return "\n".join(lines[::-1])
 
 
 if __name__ == "__main__":
     import sys
-    if len(sys.argv) == 3 and sys.argv[1] == "write":
+    if len(sys.argv) in (3, 4) and sys.argv[1] == "write":
+        if "--forward" in sys.argv[3:]:
+            TIME_REVERSED = False
         write_file(sys.argv[2])
         print("wrote", sys.argv[2])
     elif len(sys.argv) == 2 and sys.argv[1] == "ascii":
         print(render_ascii(build_table()))
     else:
-        print("usage: pattern.py write FILE | ascii")
+        print("usage: pattern.py write FILE [--forward] | ascii")
